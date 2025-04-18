@@ -1,0 +1,9 @@
+[project]
+name = "nn-ideas-manager"
+version = "0.1.0"
+description = "Telegram Bot for saving instagram content and storing it in LLM friendly way."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "knowledge-devourer>=1.0.4",
+]

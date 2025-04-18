@@ -1,0 +1,1 @@
+knowledge-devourer>=1.0.4
