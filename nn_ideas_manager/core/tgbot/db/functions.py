@@ -1,9 +1,30 @@
-import loguru
-import pgcrud as pg
-from psycopg import errors
-from nn_ideas_manager.core.tgbot.config import DB_DSN
-from pgcrud import IdentifierExpression as i, QueryBuilder as q
 from nn_ideas_manager.core.tgbot.db.connection import get_pool
+from asyncpg import Record
+
+
+async def mark_link_status(link_id: str, new_status: str) -> None:
+    """
+    Update a single link’s status.
+    """
+    sql = "UPDATE user_links SET status = $1 WHERE id = $2"
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(sql, new_status, link_id)
+
+
+async def fetch_user_links_by_status(status: str) -> list[Record]:
+    """
+    Returns all rows from user_links with the given status.
+    """
+    sql = """
+        SELECT id, url, telegram_id
+          FROM user_links
+         WHERE status = $1
+    """
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(sql, status)
+    return rows
 
 
 async def save_telegram_user(user: dict) -> None:

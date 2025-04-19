@@ -6,16 +6,8 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "aiogram>=3.20.0",
+    "apscheduler>=3.11.0",
     "asyncpg>=0.30.0",
     "knowledge-devourer>=1.0.5",
-    "pgcrud",
-    "python-dotenv>=1.0"
+    "python-dotenv>=1.0",
 ]
-
-[tool.uv.sources]
-pgcrud = { git = "https://github.com/dakivara/pgcrud.git" }
-
-
-# TODO: Come up with a way to separate knowledge_devourer and telegram bot - because telegram bot
-#  should be runnin on cheap VPS, whereas knowledge_devourer should run only on PC with GPU -
-#  otherwise it would be too slow.

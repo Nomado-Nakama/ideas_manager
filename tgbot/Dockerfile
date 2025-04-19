@@ -3,20 +3,15 @@
 # --------------------------
 FROM python:3.12-slim AS base
 WORKDIR /install
-RUN pip install --no-cache-dir \
-        torch torchvision torchaudio \
-        --index-url https://download.pytorch.org/whl/cu126
+
+COPY requirements.cuda.txt .
+RUN pip install -r requirements.cuda.txt --extra-index-url https://download.pytorch.org/whl/cu126
 
 # --------------------------
 # Stage 2: Other deps (+git)
 # --------------------------
 FROM python:3.12-slim AS deps
 WORKDIR /app
-
-# Install Git so pip can fetch git+… packages
-RUN apt-get update \
- && apt-get install -y --no-install-recommends git \
- && rm -rf /var/lib/apt/lists/*
 
 # Install everything else
 COPY requirements.txt .
@@ -29,10 +24,12 @@ FROM python:3.12-slim AS runtime
 WORKDIR /app
 
 # Copy other packages
-COPY --from=deps  /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=deps /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 
 # Copy PyTorch libs
-COPY --from=base /install /usr/local/lib/python3.12/site-packages
+COPY --from=base /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+
+RUN apt get install ffmpeg
 
 # Copy your code
 COPY nn_ideas_manager ./nn_ideas_manager
