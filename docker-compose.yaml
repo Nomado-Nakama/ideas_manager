@@ -1,24 +1,42 @@
-version: "3.8"
-
 services:
   db:
-    image: postgres:latest
-    container_name: nn_ideas_manager_db
+    image: postgres:16
+    container_name: nn_links_db
     restart: always
+    ports:
+      - "5432:5432"
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: postgres
-    ports:
-      - "5432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
-    networks:
-      - app-network
+      - pgdata_links:/var/lib/postgresql/data
+      - ./migrations/:/docker-entrypoint-initdb.d/
+    networks: [app-network]
+
+  bot:
+    build:
+      context: .
+      dockerfile: tgbot/Dockerfile
+    restart: always
+    env_file:
+      - ./tgbot/.env
+    depends_on: [db]
+    networks: [app-network]
+    volumes:
+      - ./storage:/app/storage
+      - ./nn_ideas_manager:/app/nn_ideas_manager
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [ gpu ]
 
 volumes:
-  pgdata:
+  pgdata_links:
 
 networks:
   app-network:
-    driver: bridge
+    external: false

@@ -18,5 +18,6 @@ wheels/
 **.json
 **.txt
 !requirements.txt
+**.env
 
 uv.lock

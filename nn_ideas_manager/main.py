@@ -1,27 +1,14 @@
-from pathlib import Path
+import asyncio
+from aiogram import Bot, Dispatcher
+from nn_ideas_manager.core.tgbot.config import BOT_TOKEN
+from nn_ideas_manager.core.tgbot.handlers.link_handler import router
 
-from knowledge_devourer.core.config import Config
-from knowledge_devourer.core.utils import load_links
-from knowledge_devourer.core.processor import process_posts, process_reels
 
-
-def main():
-    links = load_links(path="reels_and_posts_links.txt", limit=10)
-
-    config = Config(
-        Path(__file__).parent.joinpath("storage")
-    )
-
-    process_posts(
-        links=links,
-        config=config
-    )  # handle /p/ links
-
-    process_reels(
-        links=links,
-        config=config
-    )  # handle /reel/ links
-
+async def main():
+    bot = Bot(BOT_TOKEN)
+    dp = Dispatcher()
+    dp.include_router(router)
+    await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

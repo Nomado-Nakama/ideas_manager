@@ -1,3 +1,7 @@
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE EXTENSION IF NOT EXISTS pg_cron;
+
 CREATE TABLE IF NOT EXISTS telegram_users (
     telegram_id BIGINT PRIMARY KEY,
     first_name TEXT,
@@ -63,14 +67,10 @@ CREATE TABLE IF NOT EXISTS embeddings (
 
 CREATE TABLE IF NOT EXISTS user_links (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    link TEXT NOT NULL,
+    url TEXT NOT NULL,
+    telegram_id  BIGINT NOT NULL,
     status TEXT DEFAULT 'unprocessed', -- 'unprocessed', 'processed', 'unsupported'
     content_item_id UUID REFERENCES content_items(id) ON DELETE SET NULL,
-    added_at TIMESTAMP DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS user_links_users (
-    user_link_id UUID REFERENCES user_links(id) ON DELETE CASCADE,
-    telegram_user_id BIGINT REFERENCES telegram_users(telegram_id) ON DELETE CASCADE,
-    PRIMARY KEY (user_link_id, telegram_user_id)
+    added_at TIMESTAMP DEFAULT NOW(),
+    CONSTRAINT unique_url UNIQUE(url)
 );
