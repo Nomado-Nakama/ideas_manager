@@ -21,6 +21,9 @@ COPY --from=base /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       ffmpeg \
+      tesseract-ocr \
+      tesseract-ocr-eng \
+      tesseract-ocr-rus \
  && rm -rf /var/lib/apt/lists/*
 
 # Copy your code

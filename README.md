@@ -14,6 +14,12 @@ This is a RAG project for consuming digital content and using knowledge from con
 2. https://www.instagram.com/p/{post_id}
 
 
+## TODO:
+
+- [ ] Transcribed audio is saved with timestamps for each word so that we later can match what was said in audio and what text was showed in video. 
+      That way we will craft documents that will fully describe instagram reels.
+- [ ] Use some AI model to summarize image - then we could also process speechless reels.
+
 ## Project Description (irrelevant at the moment)
 
 This tool is designed to:
