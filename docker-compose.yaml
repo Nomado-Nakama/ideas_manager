@@ -13,13 +13,23 @@ services:
       - ./migrations/:/docker-entrypoint-initdb.d/
     networks: [app-network]
 
+  bot:
+    build:
+      context: .
+      dockerfile: ./configs/tgbot/Dockerfile
+    env_file:
+      - ./configs/tgbot/.env
+    depends_on: [db, chroma]
+    networks: [app-network]
+
   chroma:
-    image: chromadb/chroma:0.5
+    image: chromadb/chroma:latest
     volumes:
       - ./chroma:/chroma-data
+    networks: [app-network]
 
 volumes:
-  pgdata_links:
+  pgdata_urls:
 
 networks:
   app-network:

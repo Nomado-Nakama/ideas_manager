@@ -1,3 +1,31 @@
+# ---------- core routine ----------
+asyncpg
+APScheduler
+loguru
+# ---------- torch stack ----------
 torch
 torchaudio
 torchvision
+# ---------- vision / audio ----------
+opencv-python-headless
+pytesseract
+faster-whisper
+ffmpeg-python
+# ---------- media download / IG ----------
+yt-dlp
+instaloader
+# ---------- langchain & vector store ----------
+langchain
+langchain-core
+langchain-chroma
+langchain-community
+langchain-huggingface
+chromadb
+# ---------- embeddings ----------
+sentence-transformers
+huggingface-hub
+# ---------- helpers ----------
+numpy
+tqdm
+hf_xet
+python-dotenv

@@ -1,57 +1,61 @@
-import asyncio
+"""
+Worker that polls Postgres every 5 s for ``undigested`` links,
+ingests them with LangChain pipeline, and updates status.
 
-import loguru
+Run locally:
+    python -m nn_ideas_manager.core.workers.process_undigested_urls
+"""
+from __future__ import annotations
+
+import asyncio
+from typing import Literal
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from loguru import logger
 
 from nn_ideas_manager.core.db.functions import (
     fetch_user_urls_by_status,
     mark_url_status,
 )
+from nn_ideas_manager.core.workers.process_undigested_urls.utils import ingestion_workflow, IngestResult
 
-logger = loguru.logger
+
+async def _handle_url(link_id: str, url: str, telegram_id: int) -> None:
+    try:
+        result: IngestResult = await ingestion_workflow(url)
+        logger.info(
+            "✅  Ingested {url} for user={u} → {n} chunks",
+            url=url,
+            u=telegram_id,
+            n=len(result.doc_ids),
+        )
+        status: Literal["ingested"] = "ingested"
+    except Exception as exc:
+        logger.exception("💥  Failed to ingest {url}: {e}", url=url, e=exc)
+        status: Literal["error"] = "error"
+
+    await mark_url_status(link_id, status)
 
 
-async def main():
+async def poll_undigested_urls() -> None:
+    rows = await fetch_user_urls_by_status("undigested")
+    if not rows:
+        return
+
+    # run concurrently but bounded
+    await asyncio.gather(
+        *(_handle_url(row["id"], row["url"], row["telegram_id"]) for row in rows)
+    )
+
+
+async def main() -> None:
     scheduler = AsyncIOScheduler()
     scheduler.add_job(poll_undigested_urls, trigger="interval", seconds=5)
     scheduler.start()
-
-
-async def ingestion_workflow(url):
-    """
-    1. Download content by url
-    2. Extract metadata if available
-    3. Extract video -> audio -> text
-    4. Extract video -> images -> text
-    5. Extract image -> text
-    6. Combine text from 2 - 5 and embedd
-    7. Store embeddings in ChromaDB
-    """
-    raise NotImplemented()
-
-
-async def poll_undigested_urls():
-    """
-    Every 5s: grab all 'undigested' links, process them,
-    then mark 'processed' or 'error'.
-    """
-    undigested_urls = await fetch_user_urls_by_status("undigested")
-    if not undigested_urls:
-        return
-
-    for undigested_url in undigested_urls:
-        link_id = undigested_url["id"]
-        url = undigested_url["url"]
-        tg_id = undigested_url["telegram_id"]
-
-        try:
-            logger.info(f"Processing {url} for user {tg_id}")
-            new_status = await ingestion_workflow(url)
-            await mark_url_status(link_id, new_status)
-
-        except Exception as e:
-            logger.error(f"Failed to process link {link_id}: {e}")
-            await mark_url_status(link_id, "error")
+    logger.info("👷‍♂️  URL-ingestion worker started.")
+    # Keep the event-loop alive forever
+    while True:
+        await asyncio.sleep(3600)
 
 
 if __name__ == "__main__":

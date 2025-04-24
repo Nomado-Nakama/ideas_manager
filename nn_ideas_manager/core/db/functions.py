@@ -6,7 +6,7 @@ async def mark_url_status(link_id: str, new_status: str) -> None:
     """
     Update a single link’s status.
     """
-    sql = "UPDATE urls SET status = $1 WHERE id = $2"
+    sql = "UPDATE user_urls SET status = $1 WHERE id = $2"
     pool = await get_pool()
     async with pool.acquire() as conn:
         await conn.execute(sql, new_status, link_id)
