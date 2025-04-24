@@ -1,7 +1,6 @@
 services:
   db:
     image: postgres:16
-    container_name: nn_links_db
     restart: always
     ports:
       - "5432:5432"
@@ -10,29 +9,14 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: postgres
     volumes:
-      - pgdata_links:/var/lib/postgresql/data
+      - pgdata_urls:/var/lib/postgresql/data
       - ./migrations/:/docker-entrypoint-initdb.d/
     networks: [app-network]
 
-  bot:
-    build:
-      context: .
-      dockerfile: tgbot/Dockerfile
-    restart: always
-    env_file:
-      - ./tgbot/.env
-    depends_on: [db]
-    networks: [app-network]
+  chroma:
+    image: chromadb/chroma:0.5
     volumes:
-      - ./storage:/app/storage
-      - ./nn_ideas_manager:/app/nn_ideas_manager
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [ gpu ]
+      - ./chroma:/chroma-data
 
 volumes:
   pgdata_links:

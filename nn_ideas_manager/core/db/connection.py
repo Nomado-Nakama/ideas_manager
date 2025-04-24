@@ -1,5 +1,5 @@
 import asyncpg
-from nn_ideas_manager.core.tgbot.config import DB_DSN, POOL_MIN, POOL_MAX
+from nn_ideas_manager.core.db.config import DB_DSN, POOL_MIN, POOL_MAX
 
 _pool: asyncpg.Pool | None = None
 

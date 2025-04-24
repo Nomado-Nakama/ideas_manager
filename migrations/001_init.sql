@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS telegram_users (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS user_links (
+CREATE TABLE IF NOT EXISTS user_urls (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     url TEXT NOT NULL,
     telegram_id  BIGINT NOT NULL,

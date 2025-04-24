@@ -8,6 +8,5 @@ dependencies = [
     "aiogram>=3.20.0",
     "apscheduler>=3.11.0",
     "asyncpg>=0.30.0",
-    "knowledge-devourer>=1.0.5",
     "python-dotenv>=1.0",
 ]

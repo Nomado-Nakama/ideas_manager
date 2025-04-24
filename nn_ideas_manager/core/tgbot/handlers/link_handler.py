@@ -1,8 +1,8 @@
 from aiogram import Router, F
 from aiogram.types import Message
 import re
-from nn_ideas_manager.core.tgbot.db.functions import (
-    save_user_link,
+from nn_ideas_manager.core.db.functions import (
+    save_url,
     get_telegram_user_role
 )
 
@@ -19,5 +19,5 @@ async def link_handler(msg: Message):
         return
 
     url = URL_RE.search(msg.text).group(0)
-    await save_user_link(tg_id, url)
+    await save_url(tg_id, url)
     await msg.answer("✅ Link sent for ingestion!")

@@ -1,4 +1,20 @@
-## Project Description
+# Nakama Ideas Manager
+
+---
+This is a RAG project for consuming digital content and using knowledge from consumed content
+---
+
+## High level architecture
+
+<img src="high-level-architecture.svg">
+
+## Current list of supported types of urls:
+
+1. https://www.instagram.com/reel/{reel_id}
+2. https://www.instagram.com/p/{post_id}
+
+
+## Project Description (irrelevant at the moment)
 
 This tool is designed to:
 1. User can send instagram content link.

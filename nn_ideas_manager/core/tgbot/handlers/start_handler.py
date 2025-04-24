@@ -1,7 +1,7 @@
 from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
-from nn_ideas_manager.core.tgbot.db.functions import save_telegram_user
+from nn_ideas_manager.core.db.functions import save_telegram_user
 
 router = Router()
 
