@@ -14,4 +14,4 @@ async def cmd_start_handler(msg: Message):
         "last_name": msg.from_user.last_name
     }
     await save_telegram_user(user)
-    await msg.answer("👋 Hello! Send me an Instagram link and I’ll store it for you.")
+    await msg.answer("👋 Hello! Send me an Instagram link and I’ll ingest it so you could ask me about it's contents.")

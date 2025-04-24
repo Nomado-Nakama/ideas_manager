@@ -15,9 +15,9 @@ async def link_handler(msg: Message):
     tg_id = msg.from_user.id
     role = await get_telegram_user_role(tg_id)
     if role != "moderator":
-        await msg.answer("⛔ You do not have permission to store links.")
+        await msg.answer("⛔ You do not have permission to ingest links.")
         return
 
     url = URL_RE.search(msg.text).group(0)
     await save_user_link(tg_id, url)
-    await msg.answer("✅ Link stored!")
+    await msg.answer("✅ Link sent for ingestion!")

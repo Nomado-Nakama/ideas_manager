@@ -1,59 +1,42 @@
+import os
 import loguru
+import asyncio
 
 from nn_ideas_manager.core.tgbot.db.functions import (
     fetch_user_links_by_status,
     mark_link_status,
 )
 
-from pathlib import Path
-
-from knowledge_devourer.core.config import Config
-from knowledge_devourer.core.processor import process_posts, process_reels
-
 logger = loguru.logger
 
 
-async def poll_unprocessed_links():
+async def poll_undigested_urls():
     """
     Every 30s: grab all 'unprocessed' links, process them,
     then mark 'processed' or 'error'.
     """
-    rows = await fetch_user_links_by_status("unprocessed")
-    if not rows:
+    undigested_urls = await fetch_user_links_by_status("undigested")
+    if not undigested_urls:
         return
 
-    for row in rows:
-        link_id = row["id"]
-        url = row["url"]
-        tg_id = row["telegram_id"]
+    for undigested_url in undigested_urls:
+        link_id = undigested_url["id"]
+        url = undigested_url["url"]
+        tg_id = undigested_url["telegram_id"]
 
         try:
-            # ── your actual processing logic here ──
             logger.info(f"Processing {url} for user {tg_id}")
-
-            await use_kd(url=url)
-
+            # ── your actual processing logic here ──
+            # 1. Download content by url
+            # 2. Extract metadata if available
+            # 3. Extract video -> audio -> text
+            # 4. Extract video -> images -> text
+            # 5. Extract image -> text
+            # 6. Combine text from 2 - 5 and embedd
+            # 7. Store embeddings in ChromaDB
             # ── mark as done ──
-            await mark_link_status(link_id, "processed")
+            await mark_link_status(link_id, "ingested")
 
         except Exception as e:
             logger.error(f"Failed to process link {link_id}: {e}")
             await mark_link_status(link_id, "error")
-
-
-async def use_kd(url: str):
-    config = Config(
-        base_dir=Path("/app/storage")
-    )
-
-    process_posts(
-        links=[url],
-        config=config
-    )  # handle /p/ links
-
-    process_reels(
-        links=[url],
-        config=config
-    )  # handle /reel/ links
-
-

@@ -1,4 +1,3 @@
-knowledge-devourer>=1.0.5
 torch
 torchaudio
 torchvision
