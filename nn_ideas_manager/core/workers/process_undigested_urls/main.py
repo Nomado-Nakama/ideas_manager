@@ -47,7 +47,7 @@ async def poll_undigested_urls():
         try:
             logger.info(f"Processing {url} for user {tg_id}")
             new_status = await ingestion_workflow(url)
-            await mark_url_status(link_id, )
+            await mark_url_status(link_id, new_status)
 
         except Exception as e:
             logger.error(f"Failed to process link {link_id}: {e}")
