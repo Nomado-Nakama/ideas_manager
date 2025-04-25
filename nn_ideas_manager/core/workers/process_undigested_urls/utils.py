@@ -203,9 +203,28 @@ def _embed_and_store(chunks: Iterable[str], url: str) -> List[str]:
     return _vectorstore.add_documents(valid_docs) if valid_docs else []
 
 
+def _extract_useful_metadata(meta_data: dict):
+    useful_meta_data_fields = [
+        'title',
+        'fulltitle',
+        'description',
+        'duration_string',
+        'upload_date',
+        'uploader',
+        'channel',
+        'like_count',
+        'comment_count',
+        'webpage_url',
+        'resolution',
+    ]
+
+    return {data_field: meta_data[data_field] for data_field in useful_meta_data_fields}
+
+
 async def ingestion_workflow(url: str) -> IngestResult:
     media_path, meta_data = _download_media(url, _DL_DIR)
-    merged_parts = [orjson.dumps(meta_data, option=orjson.OPT_INDENT_2).decode()]
+    only_useful_metadata_for_llm = _extract_useful_metadata(meta_data)
+    merged_parts = [orjson.dumps(only_useful_metadata_for_llm, option=orjson.OPT_INDENT_2).decode()]
     if media_path.suffix == ".mp4":
         audio = _extract_audio(media_path)
         text, words = _whisper_transcribe(media_path, audio)
