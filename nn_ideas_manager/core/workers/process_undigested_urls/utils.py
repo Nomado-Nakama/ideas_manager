@@ -13,16 +13,15 @@ import yt_dlp
 import pytesseract
 from dotenv import load_dotenv
 from torch.cuda import is_available
-from langchain_chroma import Chroma
 from faster_whisper import WhisperModel
-from langchain_openai import OpenAIEmbeddings
 from langchain.docstore.document import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+from nn_ideas_manager.core import _vectorstore
 
 # -----------------------------------------------------------------------------
 # CONSTANTS & ONE-TIME INITIALISATION
 # -----------------------------------------------------------------------------
-load_dotenv(r'E:\Projects\python\nakama-ideas-manager\configs\ingestion_worker\.env')
+load_dotenv(r'E:\Projects\python\nakama-ideas-manager\configs\.env')
 
 pytesseract.pytesseract.tesseract_cmd = (
         shutil.which("tesseract")
@@ -30,24 +29,15 @@ pytesseract.pytesseract.tesseract_cmd = (
 )
 
 _META_SUFFIX_JSON = ".meta.json"
-_OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", None)
-assert _OPENAI_API_KEY, "OPENAI_API_KEY must be set in environment"
 
 _DL_DIR = Path("/ingestion/downloaded_content")
 _DL_DIR.mkdir(parents=True, exist_ok=True)
-_CHROMA_DIR = Path(
-    os.getenv("CHROMA_DIR", r"E:\Projects\python\nakama-ideas-manager\chroma")
-).resolve()
-_CHROMA_DIR.mkdir(exist_ok=True, parents=True)
 
 _EMBED_DEVICE = "cuda" if is_available() else "cpu"
 loguru.logger.info(f"DEVICE: {_EMBED_DEVICE}")
 
 _COMPUTE_TYPE = "float16" if _EMBED_DEVICE == "cuda" else "default"
 loguru.logger.info(f"_COMPUTE_TYPE: {_COMPUTE_TYPE}")
-
-_embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
-_vectorstore = Chroma(persist_directory=str(_CHROMA_DIR), embedding_function=_embeddings)
 
 _whisper = WhisperModel(model_size_or_path="large-v3", device=_EMBED_DEVICE, compute_type=_COMPUTE_TYPE)
 

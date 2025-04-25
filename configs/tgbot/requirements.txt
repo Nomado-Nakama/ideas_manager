@@ -2,3 +2,11 @@ aiogram
 asyncpg
 APScheduler
 loguru
+
+langchain
+langchain-core
+langchain-chroma
+langchain_openai
+langchain-community
+langchain-huggingface
+chromadb
