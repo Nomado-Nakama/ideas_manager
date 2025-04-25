@@ -18,7 +18,7 @@ services:
       context: .
       dockerfile: ./configs/tgbot/Dockerfile
     env_file:
-      - ./configs/tgbot/.env
+      - ./configs/.env
     depends_on: [db, chroma]
     networks: [app-network]
 
