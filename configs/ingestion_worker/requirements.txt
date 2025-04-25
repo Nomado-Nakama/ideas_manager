@@ -13,11 +13,11 @@ faster-whisper
 ffmpeg-python
 # ---------- media download / IG ----------
 yt-dlp
-instaloader
 # ---------- langchain & vector store ----------
 langchain
 langchain-core
 langchain-chroma
+langchain_openai
 langchain-community
 langchain-huggingface
 chromadb
