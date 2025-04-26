@@ -5,13 +5,13 @@ from dotenv import load_dotenv
 from langchain_chroma import Chroma
 from langchain_openai import OpenAIEmbeddings
 
-load_dotenv(r'\Projects\python\nakama-ideas-manager\configs\.env')
+load_dotenv('/Projects/python/nakama-ideas-manager/configs/.env')
 
 _OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", None)
 assert _OPENAI_API_KEY, "OPENAI_API_KEY must be set in environment"
 
 _CHROMA_DIR = Path(
-    os.getenv("CHROMA_DIR", r"\Projects\python\nakama-ideas-manager\chroma")
+    os.getenv("CHROMA_DIR", "/Projects/python/nakama-ideas-manager/chroma")
 ).resolve()
 _CHROMA_DIR.mkdir(exist_ok=True, parents=True)
 

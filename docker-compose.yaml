@@ -17,6 +17,7 @@ services:
     build:
       context: .
       dockerfile: ./configs/tgbot/Dockerfile
+    restart: always
     env_file:
       - ./configs/.env
     volumes:
