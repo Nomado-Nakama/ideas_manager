@@ -1,4 +1,5 @@
 from aiogram import Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import CommandObject, Command
 from aiogram.types import Message, BufferedInputFile
 import io
@@ -33,4 +34,7 @@ async def ask_handler(msg: Message, command: CommandObject) -> None:
         )
 
     # 2️⃣ Send the LLM answer (already contains citations)
-    await msg.answer(result.content, parse_mode="Markdown")
+    try:
+        await msg.answer(result.content, parse_mode="Markdown")
+    except Exception:
+        await msg.answer(result.content)

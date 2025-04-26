@@ -26,9 +26,11 @@ services:
     networks: [app-network]
 
   chroma:
-    image: chromadb/chroma:latest
+    image: chromadb/chroma:0.6.3
     volumes:
-      - ./chroma:/chroma-data
+      - ./chroma:/chroma/chroma
+    ports:
+      - "8001:8000"
     networks: [app-network]
 
 volumes:

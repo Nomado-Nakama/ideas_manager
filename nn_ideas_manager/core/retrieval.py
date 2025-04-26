@@ -74,7 +74,7 @@ async def answer(question: str) -> AnswerResult:
     # Append foot-note style citations
     footnotes = ""
     if sources:
-        footnote_lines = [f"[{i + 1}]. {url}" for i, url in enumerate(sources)]
+        footnote_lines = [f"{i + 1}. {url}" for i, url in enumerate(sources)]
         footnotes = "\n\n---\n**Sources**:\n" + "\n".join(footnote_lines)
 
     return AnswerResult(

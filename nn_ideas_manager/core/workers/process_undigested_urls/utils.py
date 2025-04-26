@@ -23,6 +23,8 @@ from nn_ideas_manager.core import _vectorstore
 # -----------------------------------------------------------------------------
 load_dotenv(r'\Projects\python\nakama-ideas-manager\configs\.env')
 
+_IG_COOKIES_PATH = Path("cookies.txt").resolve()
+
 pytesseract.pytesseract.tesseract_cmd = (
         shutil.which("tesseract")
         or r"C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
@@ -70,9 +72,9 @@ def _dump_info(info: dict, out_dir: Path) -> None:
     )
 
 
-def _get_escaped_word_timestamps(words: list[dict], detected_language):
+def _get_escaped_word_timestamps(words: list[dict]):
     return [
-        {"token": w['token'], "language": detected_language, "start": float(round(w['start'], 2)),
+        {"token": w['token'], "start": float(round(w['start'], 2)),
          "end": float(round(w['end'], 2))}
         for w in words
     ]
@@ -123,7 +125,7 @@ def _download_media(url: str, out_dir: Path = _DL_DIR) -> tuple[Path, dict]:
         "max_sleep_requests": _YT_SLEEP_MAX,
         "sleep_interval": _YT_SLEEP_MIN,
         "max_sleep_interval": _YT_SLEEP_MAX,
-
+        "cookiefile": str(_IG_COOKIES_PATH)
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -148,37 +150,51 @@ def _load_cached_whisper_data(words_path: Path) -> tuple[str, list[dict]]:
     return text, words
 
 
-def _whisper_transcribe(media_path: Path, wav: Path, chunk_sec: int | None = None) -> tuple[str, list[dict]]:
+def _whisper_transcribe(media_path: Path, wav: Path, chunk_sec: int | None = None, content_language: str = 'en') -> tuple[str, list[dict]]:
     if os.path.exists(media_path.with_suffix(".words.json")):
         return _load_cached_whisper_data(media_path.with_suffix(".words.json"))
 
     kw = {"chunk_length": max(chunk_sec, 1)} if chunk_sec else {}
 
-    def _run(lang: str | None = None):
-        seg_iter, info = _whisper.transcribe(str(wav), language=lang, beam_size=5, vad_filter=True,
-                                             vad_parameters=dict(min_silence_duration_ms=300), no_speech_threshold=0.0,
-                                             compression_ratio_threshold=float("inf"), word_timestamps=True, **kw)
-        segments = list(seg_iter)
-        text = " ".join(s.text.strip() for s in segments)
-        words = [{"token": w.word, "start": round(w.start, 2), "end": round(w.end, 2)} for s in segments for w in
-                 getattr(s, "words", []) or []]
-        return text, info.language, words
+    seg_iter, info = _whisper.transcribe(str(wav), language=content_language, beam_size=5, vad_filter=True,
+                                         vad_parameters=dict(min_silence_duration_ms=300), no_speech_threshold=0.0,
+                                         compression_ratio_threshold=float("inf"), word_timestamps=True, **kw)
+    segments = list(seg_iter)
+    text = " ".join(s.text.strip() for s in segments)
+    words = [{"token": w.word, "start": round(w.start, 2), "end": round(w.end, 2)} for s in segments for w in
+             getattr(s, "words", []) or []]
 
-    text, detected_language, words = _run()
-    if detected_language != "ru" and sum("а" <= ch.lower() <= "я" for ch in text) / max(len(text), 1) > 0.40:
-        text, detected_language, words = _run("ru")
-
-    escaped = _get_escaped_word_timestamps(words, detected_language)
+    escaped = _get_escaped_word_timestamps(words)
     media_path.with_suffix(".words.json").write_bytes(orjson.dumps(escaped, option=orjson.OPT_INDENT_2))
+
     return text, escaped
 
 
-def _get_spoken_words(words, t_sec, word_margin: float = 0.4):
+def _get_spoken_words(words, t_sec, word_margin: float = 0.2):
     return "".join(w["token"] for w in words if (w["start"] - word_margin) <= t_sec <= (w["end"] + word_margin))
 
 
-def _ocr_video_frames(video_path: Path, every_ms: int = 800, words: list[dict] | None = None) -> str:
-    detected_language = words[0]['language'] + ("g" if words[0]['language'] == "en" else "s")
+def _convert_language_code(lang_code):
+    convertion_dict = {
+        "en": "eng",
+        "ru": "rus"
+    }
+
+    if lang_code in convertion_dict.keys():
+        return convertion_dict[lang_code]
+    else:
+        return lang_code
+
+
+def _ocr_video_frames(
+    video_path: Path,
+    every_ms: int = 800,
+    words: list[dict] | None = None,
+    content_language: str = "en"
+) -> str:
+
+    content_language = _convert_language_code(content_language)
+
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         return ""
@@ -195,7 +211,7 @@ def _ocr_video_frames(video_path: Path, every_ms: int = 800, words: list[dict] |
         if frame_idx % step == 0:
             t_sec = cap.get(cv2.CAP_PROP_POS_MSEC) / 1000.0
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            ocr_txt = pytesseract.image_to_string(gray, lang=detected_language).strip()
+            ocr_txt = pytesseract.image_to_string(gray, lang=content_language).strip()
             spoken = _get_spoken_words(words, t_sec)
             if ocr_txt:
                 collected.append(f"[{t_sec:05.2f}s] Text on video frame: \"{ocr_txt}\"")
@@ -207,8 +223,9 @@ def _ocr_video_frames(video_path: Path, every_ms: int = 800, words: list[dict] |
     return "\n".join(collected)
 
 
-def _ocr_image(img_path: Path) -> str:
-    return pytesseract.image_to_string(cv2.imread(str(img_path)), lang="eng+rus")
+def _ocr_image(img_path: Path, content_language) -> str:
+    content_language = _convert_language_code(content_language)
+    return pytesseract.image_to_string(cv2.imread(str(img_path)), lang=content_language)
 
 
 def _chunk_text(text: str) -> List[str]:
@@ -244,17 +261,27 @@ def _extract_useful_metadata(meta_data: dict):
     return {data_field: meta_data[data_field] for data_field in useful_meta_data_fields}
 
 
+def _determine_content_language(content_description):
+    if sum("а" <= ch.lower() <= "я" for ch in content_description) / max(len(content_description), 1) > 0.40:
+        return "ru"
+    else:
+        return "en"
+
+
 async def ingestion_workflow(url: str) -> IngestResult:
     media_path, meta_data = _download_media(url, _DL_DIR)
     only_useful_metadata_for_llm = _extract_useful_metadata(meta_data)
+    content_language = _determine_content_language(only_useful_metadata_for_llm['description'])
+    only_useful_metadata_for_llm['content_language'] = content_language
     merged_parts = [orjson.dumps(only_useful_metadata_for_llm, option=orjson.OPT_INDENT_2).decode()]
+
     if media_path.suffix == ".mp4":
         audio = _extract_audio(media_path)
-        text, words = _whisper_transcribe(media_path, audio)
+        text, words = _whisper_transcribe(media_path, audio, content_language=content_language)
         merged_parts.append(text)
-        merged_parts.append(_ocr_video_frames(media_path, words=words))
+        merged_parts.append(_ocr_video_frames(media_path, words=words, content_language=content_language))
     else:
-        merged_parts.append(_ocr_image(media_path))
+        merged_parts.append(_ocr_image(media_path, content_language=content_language))
 
     merged_text = "\n".join(p for p in merged_parts if p)
     chunks = _chunk_text(merged_text)
