@@ -20,8 +20,3 @@ _vectorstore = Chroma(
     persist_directory=str(_CHROMA_DIR),
     embedding_function=_embeddings,  # same embedding model
 )
-
-_retriever = _vectorstore.as_retriever(
-    search_type="mmr",  # same policy as on the diagram
-    search_kwargs={"k": 3, "lambda_mult": 0.8},
-)

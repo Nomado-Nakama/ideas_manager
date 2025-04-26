@@ -1,5 +1,4 @@
 from aiogram import Router
-from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import CommandObject, Command
 from aiogram.types import Message, BufferedInputFile
 import io
@@ -11,17 +10,40 @@ router = Router()
 
 @router.message(Command("ask"))
 async def ask_handler(msg: Message, command: CommandObject) -> None:
-    query = (command.args or "").strip()
-    if not query:
+    """
+    `/ask [num_sources] question …`
+
+    * `/ask Where was this filmed?`      – defaults to 3 sources
+    * `/ask 5 Where was this filmed?`    – tries to retrieve 5 sources
+    """
+    raw = (command.args or "").strip()
+
+    if not raw:
         await msg.answer(
-            "ℹ️ Usage: `/ask Ask any question to the nakama knowledge base`",
+            "ℹ️ Usage:\n"
+            "• `/ask Where was this filmed?`\n"
+            "• `/ask 5 Where was this filmed?`",
             parse_mode="Markdown",
         )
         return
 
-    await msg.answer("🔎 Let me think…")
+    first, *rest = raw.split(maxsplit=1)
 
-    result: AnswerResult = await answer(query)
+    # try to interpret the first token as an int
+    try:
+        k = max(1, min(10, int(first)))   # keep it in a sensible range (1-10)
+        query = rest[0] if rest else ""
+    except ValueError:
+        k = 5                              # fallback to default
+        query = raw
+
+    if not query:
+        await msg.answer("❗ I need a question after the number.")
+        return
+
+    await msg.answer(f"🔎 Looking for up to *{k}* relevant chunks…", parse_mode="Markdown")
+
+    result: AnswerResult = await answer(query, k=k)
 
     # 1️⃣ Send the raw context as a downloadable file
     if result.context:

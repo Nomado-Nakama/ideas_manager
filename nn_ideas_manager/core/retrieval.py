@@ -7,7 +7,18 @@ from langchain_core.messages import BaseMessage
 from langchain_openai import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
 
-from nn_ideas_manager.core import _retriever, _vectorstore
+from nn_ideas_manager.core import _vectorstore
+
+
+def _build_retriever(k: int = 3):
+    """
+    Build a new MMR retriever for the given *k*.
+    Creating it on-demand lets us respect the user-supplied value.
+    """
+    return _vectorstore.as_retriever(
+        search_type="mmr",
+        search_kwargs={"k": k, "lambda_mult": 0.8},
+    )
 
 
 @dataclass(slots=True)
@@ -45,12 +56,15 @@ ANSWER (markdown):"""
 _llm = ChatOpenAI(model_name="gpt-4o-mini", temperature=0.7)  # cheap & fast
 
 
-async def answer(question: str) -> AnswerResult:
+async def answer(question: str, k: int = 3) -> AnswerResult:
     """
     Retrieves relevant docs, queries the LLM and returns the answer together
     with citations and the raw context.
     """
-    docs: list[Document] = _retriever.invoke(question)
+
+    retriever = _build_retriever(k)
+
+    docs: list[Document] = retriever.invoke(question)
 
     if not docs:
         return AnswerResult(
