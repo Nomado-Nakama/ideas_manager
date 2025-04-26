@@ -21,7 +21,7 @@ from nn_ideas_manager.core import _vectorstore
 # -----------------------------------------------------------------------------
 # CONSTANTS & ONE-TIME INITIALISATION
 # -----------------------------------------------------------------------------
-load_dotenv(r'E:\Projects\python\nakama-ideas-manager\configs\.env')
+load_dotenv(r'\Projects\python\nakama-ideas-manager\configs\.env')
 
 pytesseract.pytesseract.tesseract_cmd = (
         shutil.which("tesseract")
@@ -32,6 +32,20 @@ _META_SUFFIX_JSON = ".meta.json"
 
 _DL_DIR = Path("/ingestion/downloaded_content")
 _DL_DIR.mkdir(parents=True, exist_ok=True)
+
+# ---------------------------------------------------------------------------
+#  Throttle every HTTP request made by yt-dlp to stay below IG/CDN rate-limits
+# ---------------------------------------------------------------------------
+
+_YT_SLEEP_MIN = float(os.getenv("YT_SLEEP_MIN", "1"))   # seconds
+_YT_SLEEP_MAX = float(os.getenv("YT_SLEEP_MAX", "5"))
+if _YT_SLEEP_MAX < _YT_SLEEP_MIN:        # guard against bad env values
+    _YT_SLEEP_MAX = _YT_SLEEP_MIN
+
+loguru.logger.info(
+    "yt-dlp will sleep for a random %.1f-%.1f s between HTTP requests",
+    _YT_SLEEP_MIN, _YT_SLEEP_MAX,
+)
 
 _EMBED_DEVICE = "cuda" if is_available() else "cpu"
 loguru.logger.info(f"DEVICE: {_EMBED_DEVICE}")
@@ -101,6 +115,15 @@ def _download_media(url: str, out_dir: Path = _DL_DIR) -> tuple[Path, dict]:
         "merge_output_format": "mp4",
         "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best",
         "noplaylist": True,
+        # ---------- polite throttling ----------------------------------------
+        # CLI equivalents:
+        # --sleep-requests / --max-sleep-requests   (between *requests*)
+        # --sleep-interval / --max-sleep-interval   (between *downloads*)
+        "sleep_requests": _YT_SLEEP_MIN,
+        "max_sleep_requests": _YT_SLEEP_MAX,
+        "sleep_interval": _YT_SLEEP_MIN,
+        "max_sleep_interval": _YT_SLEEP_MAX,
+
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:

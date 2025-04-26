@@ -19,6 +19,9 @@ services:
       dockerfile: ./configs/tgbot/Dockerfile
     env_file:
       - ./configs/.env
+    volumes:
+      - ./configs/.env:/Projects/python/nakama-ideas-manager/configs/.env
+      - ./chroma:/Projects/python/nakama-ideas-manager/chroma
     depends_on: [db, chroma]
     networks: [app-network]
 
