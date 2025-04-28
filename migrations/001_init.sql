@@ -11,7 +11,6 @@ CREATE TABLE IF NOT EXISTS user_urls (
     url TEXT NOT NULL,
     telegram_id  BIGINT NOT NULL,
     status TEXT DEFAULT 'undigested', -- 'undigested', 'ingested', 'unsupported'
-    content_item_id UUID REFERENCES content_items(id) ON DELETE SET NULL,
     added_at TIMESTAMP DEFAULT NOW(),
     CONSTRAINT unique_url UNIQUE(url)
 );
