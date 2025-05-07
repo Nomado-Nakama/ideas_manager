@@ -2,39 +2,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from langchain.schema import Document
 from langchain_core.messages import BaseMessage
-from langchain_openai import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
 
-from nn_ideas_manager.core import _vectorstore
-
-
-def _build_retriever(k: int = 3):
-    """
-    Build a new MMR retriever for the given *k*.
-    Creating it on-demand lets us respect the user-supplied value.
-    """
-    return _vectorstore.as_retriever(
-        search_type="mmr",
-        search_kwargs={"k": k, "lambda_mult": 0.8},
-    )
+from nn_ideas_manager.core.rag.multirepretriever import MultiRepRetriever
+from nn_ideas_manager.core.rag import vector_store, doc_store, embeddings, llm
 
 
 @dataclass(slots=True)
 class AnswerResult:
     """Returned by `answer()` and consumed by the Telegram layer."""
-    content: str          # LLM answer (markdown) with citations appended
-    context: str          # Exact text that was provided to the LLM
-    sources: list[str]    # Unique list of `source_url` values
-
-
-# ------------------------------------------------------------------ #
-#   Helper for tests                                                 #
-# ------------------------------------------------------------------ #
-def num_vectors() -> int:
-    # type: ignore[attr-defined]
-    return _vectorstore._collection.count()
+    content: str
+    context: str
+    sources: list[str]
 
 
 # ------------------------------------------------------------------ #
@@ -50,10 +30,8 @@ CONTEXT:
 --------------------
 
 QUESTION: {question}
-ANSWER (markdown):"""
+ANSWER:"""
 )
-
-_llm = ChatOpenAI(model_name="gpt-4o-mini", temperature=0.7)  # cheap & fast
 
 
 async def answer(question: str, k: int = 3) -> AnswerResult:
@@ -62,9 +40,8 @@ async def answer(question: str, k: int = 3) -> AnswerResult:
     with citations and the raw context.
     """
 
-    retriever = _build_retriever(k)
-
-    docs: list[Document] = retriever.invoke(question)
+    retriever = MultiRepRetriever(vector_store, doc_store, embeddings)
+    docs = await retriever.aretrieve(question, k)
 
     if not docs:
         return AnswerResult(
@@ -81,7 +58,7 @@ async def answer(question: str, k: int = 3) -> AnswerResult:
         if src and src not in sources:
             sources.append(src)
 
-    llm_reply: BaseMessage = _llm.invoke(
+    llm_reply: BaseMessage = llm.invoke(
         _PROMPT.format(question=question, context=context)
     )
 

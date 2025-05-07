@@ -14,3 +14,10 @@ CREATE TABLE IF NOT EXISTS user_urls (
     added_at TIMESTAMP DEFAULT NOW(),
     CONSTRAINT unique_url UNIQUE(url)
 );
+
+CREATE TABLE IF NOT EXISTS raw_docs (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	doc_id TEXT NOT NULL,
+	url TEXT NOT NULL,
+	content TEXT NOT NULL
+)

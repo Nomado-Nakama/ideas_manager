@@ -3,7 +3,7 @@ from aiogram.filters import CommandObject, Command
 from aiogram.types import Message, BufferedInputFile
 import io
 
-from nn_ideas_manager.core.retrieval import answer, AnswerResult
+from nn_ideas_manager.core.rag.retrieval import answer, AnswerResult
 
 router = Router()
 

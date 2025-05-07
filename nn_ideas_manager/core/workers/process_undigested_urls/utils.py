@@ -1,4 +1,6 @@
 import os
+import uuid
+
 import orjson
 import shutil
 import subprocess
@@ -16,7 +18,7 @@ from torch.cuda import is_available
 from faster_whisper import WhisperModel
 from langchain.docstore.document import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from nn_ideas_manager.core import _vectorstore
+from nn_ideas_manager.core.rag import vector_store, doc_store, summarizer
 
 # -----------------------------------------------------------------------------
 # CONSTANTS & ONE-TIME INITIALISATION
@@ -117,10 +119,6 @@ def _download_media(url: str, out_dir: Path = _DL_DIR) -> tuple[Path, dict]:
         "merge_output_format": "mp4",
         "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best",
         "noplaylist": True,
-        # ---------- polite throttling ----------------------------------------
-        # CLI equivalents:
-        # --sleep-requests / --max-sleep-requests   (between *requests*)
-        # --sleep-interval / --max-sleep-interval   (between *downloads*)
         "sleep_requests": _YT_SLEEP_MIN,
         "max_sleep_requests": _YT_SLEEP_MAX,
         "sleep_interval": _YT_SLEEP_MIN,
@@ -240,7 +238,7 @@ def _embed_and_store(chunks: Iterable[str], url: str) -> List[str]:
     for ch in chunks:
         valid_docs.append(Document(page_content=ch, metadata={"source_url": url}))
 
-    return _vectorstore.add_documents(valid_docs) if valid_docs else []
+    return vector_store.add_documents(valid_docs) if valid_docs else []
 
 
 def _extract_useful_metadata(meta_data: dict):
@@ -268,6 +266,13 @@ def _determine_content_language(content_description):
         return "en"
 
 
+async def _summarize_document(document_text: str):
+    return (await summarizer.ainvoke(
+        "Summarize the following Instagram content in one short paragraph, "
+        "preserving names, proper nouns and key facts:\n\n" + document_text
+    )).content
+
+
 async def ingestion_workflow(url: str) -> IngestResult:
     media_path, meta_data = _download_media(url, _DL_DIR)
     only_useful_metadata_for_llm = _extract_useful_metadata(meta_data)
@@ -284,6 +289,15 @@ async def ingestion_workflow(url: str) -> IngestResult:
         merged_parts.append(_ocr_image(media_path, content_language=content_language))
 
     merged_text = "\n".join(p for p in merged_parts if p)
-    chunks = _chunk_text(merged_text)
-    doc_ids = _embed_and_store(chunks, url)
-    return IngestResult(url=url, doc_ids=doc_ids, merged_text=merged_text)
+    summary = await _summarize_document(merged_text)
+
+    doc_id = str(uuid.uuid4())
+    summary_doc = Document(page_content=summary,
+                           metadata={"doc_id": doc_id, "source_url": url})
+    vector_store.add_document(summary_doc)
+
+    await doc_store.put(doc_id, merged_text, url)
+
+    # chunks = _chunk_text(merged_text)
+    # doc_ids = _embed_and_store(chunks, url)
+    return IngestResult(url=url, doc_ids=[doc_id], merged_text=merged_text)
