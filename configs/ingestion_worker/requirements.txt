@@ -7,10 +7,11 @@ torch
 torchaudio
 torchvision
 # ---------- vision / audio ----------
-opencv-python-headless
+ollama
 pytesseract
-faster-whisper
 ffmpeg-python
+faster-whisper
+opencv-python-headless
 # ---------- media download / IG ----------
 yt-dlp
 # ---------- langchain & vector store ----------

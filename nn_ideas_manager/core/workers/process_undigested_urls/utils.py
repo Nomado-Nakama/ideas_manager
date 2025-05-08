@@ -1,18 +1,17 @@
 import os
+import time
 import uuid
-
 import orjson
-import shutil
 import subprocess
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Iterable, List
+from typing import Iterable, List, Final
 
 import cv2
 import loguru
 import yt_dlp
 
-import pytesseract
+import ollama
 from dotenv import load_dotenv
 from torch.cuda import is_available
 from faster_whisper import WhisperModel
@@ -27,23 +26,24 @@ load_dotenv(r'\Projects\python\nakama-ideas-manager\configs\.env')
 
 _IG_COOKIES_PATH = Path("cookies.txt").resolve()
 
-pytesseract.pytesseract.tesseract_cmd = (
-        shutil.which("tesseract")
-        or r"C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
-)
-
 _META_SUFFIX_JSON = ".meta.json"
 
 _DL_DIR = Path("/ingestion/downloaded_content")
 _DL_DIR.mkdir(parents=True, exist_ok=True)
 
+_GEMMA_CACHE_DIR = Path("/ingestion/gemma_cache")
+_GEMMA_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+_SUMMARY_CACHE_DIR = Path("/ingestion/summary_cache")
+_SUMMARY_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
 # ---------------------------------------------------------------------------
 #  Throttle every HTTP request made by yt-dlp to stay below IG/CDN rate-limits
 # ---------------------------------------------------------------------------
 
-_YT_SLEEP_MIN = float(os.getenv("YT_SLEEP_MIN", "1"))   # seconds
+_YT_SLEEP_MIN = float(os.getenv("YT_SLEEP_MIN", "1"))  # seconds
 _YT_SLEEP_MAX = float(os.getenv("YT_SLEEP_MAX", "5"))
-if _YT_SLEEP_MAX < _YT_SLEEP_MIN:        # guard against bad env values
+if _YT_SLEEP_MAX < _YT_SLEEP_MIN:  # guard against bad env values
     _YT_SLEEP_MAX = _YT_SLEEP_MIN
 
 loguru.logger.info(
@@ -148,7 +148,8 @@ def _load_cached_whisper_data(words_path: Path) -> tuple[str, list[dict]]:
     return text, words
 
 
-def _whisper_transcribe(media_path: Path, wav: Path, chunk_sec: int | None = None, content_language: str = 'en') -> tuple[str, list[dict]]:
+def _whisper_transcribe(media_path: Path, wav: Path, chunk_sec: int | None = None, content_language: str = 'en') -> \
+tuple[str, list[dict]]:
     if os.path.exists(media_path.with_suffix(".words.json")):
         return _load_cached_whisper_data(media_path.with_suffix(".words.json"))
 
@@ -185,12 +186,21 @@ def _convert_language_code(lang_code):
 
 
 def _ocr_video_frames(
-    video_path: Path,
-    every_ms: int = 800,
-    words: list[dict] | None = None,
-    content_language: str = "en"
+        video_path: Path,
+        every_ms: int = 1200,
+        words: list[dict] | None = None,
+        content_language: str = "en",
+        *,
+        gemma_model: str = "gemma3:12b",
 ) -> str:
+    """
+    Scan *video_path* every *every_ms* ms and extract:
+      • On‑screen text (Tesseract *and* Gemma‑3 Vision)
+      • Synchronously spoken words within ±0.2 s
 
+    Returns a newline‑separated log suitable for downstream LLM summarisation.
+    """
+    # Translate ISO‑639‑1 → Tesseract codes (rus/eng, etc.)
     content_language = _convert_language_code(content_language)
 
     cap = cv2.VideoCapture(str(video_path))
@@ -200,30 +210,57 @@ def _ocr_video_frames(
     fps = cap.get(cv2.CAP_PROP_FPS) or 30
     step = int(fps * every_ms / 1000)
 
-    collected = []
+    collected: list[str] = []
     frame_idx = 0
+
     while True:
         ret, frame = cap.read()
         if not ret:
             break
+
         if frame_idx % step == 0:
+            # Timestamp (in seconds) of current frame
             t_sec = cap.get(cv2.CAP_PROP_POS_MSEC) / 1000.0
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            ocr_txt = pytesseract.image_to_string(gray, lang=content_language).strip()
+
+            # ----- Gemma‑3 Vision OCR ------------------------------------------
+            gemma_txt = ""
+            frame_key = f"{video_path.stem}_{int(t_sec * 1000):08d}"  # e.g. vid123_0000800
+            cache_f = _GEMMA_CACHE_DIR / f"{frame_key}.md"
+
+            try:
+                if cache_f.exists():  # 1️⃣  read cache
+                    gemma_txt = cache_f.read_text(encoding="utf-8").strip()
+                else:
+                    # encode frame → PNG → bytes (no tmp files); measure runtime
+                    start_t = time.perf_counter()
+                    ok, png_bytes = cv2.imencode(".png", frame)
+                    if ok:
+                        gemma_txt = _gemma3_ocr(bytes(png_bytes),
+                                                model_name=gemma_model).strip()
+                        # 2️⃣  persist cache
+                        cache_f.write_text(gemma_txt, encoding="utf-8")
+                        elapsed = time.perf_counter() - start_t
+                        loguru.logger.info(f"Gemma‑3 OCR {frame_key} took {elapsed:.2f}s")
+            except Exception as exc:
+                loguru.logger.warning(f"Gemma‑3 OCR failed at {t_sec:.2f}s: {exc}")
+
+            # ----- Spoken words -------------------------------------------------
             spoken = _get_spoken_words(words, t_sec)
-            if ocr_txt:
-                collected.append(f"[{t_sec:05.2f}s] Text on video frame: \"{ocr_txt}\"")
+
+            # ----- Collect output ----------------------------------------------
+            if gemma_txt:
+                collected.append(
+                    f"[{t_sec:05.2f}s] Gemma‑3 text: \"{gemma_txt}\""
+                )
             if spoken:
-                collected.append(f"[{t_sec:05.2f}s] Spoken audio in that moment: {spoken}")
+                collected.append(
+                    f"[{t_sec:05.2f}s] Spoken audio: {spoken}"
+                )
+
         frame_idx += 1
 
     cap.release()
     return "\n".join(collected)
-
-
-def _ocr_image(img_path: Path, content_language) -> str:
-    content_language = _convert_language_code(content_language)
-    return pytesseract.image_to_string(cv2.imread(str(img_path)), lang=content_language)
 
 
 def _chunk_text(text: str) -> List[str]:
@@ -266,14 +303,82 @@ def _determine_content_language(content_description):
         return "en"
 
 
-async def _summarize_document(document_text: str):
-    return (await summarizer.ainvoke(
-        "Summarize the following Instagram content in one short paragraph, "
-        "preserving names, proper nouns and key facts:\n\n" + document_text
-    )).content
+def _gemma3_ocr(image: Path | bytes,
+                *,
+                prompt: str | None = None,
+                model_name: str = "gemma3:12b") -> str:
+    """
+    Perform high‑quality OCR on *image_path* using Gemma‑3 Vision via Ollama.
+
+    Parameters
+    ----------
+    image_path : Path | bytes
+        Path to a PNG/JPEG image.
+    prompt : str | None
+        Custom system prompt.  Defaults to a concise Markdown‑oriented prompt.
+    model_name : str
+        Ollama model tag.  Defaults to ``gemma3:12b``.
+
+    Returns
+    -------
+    str
+        Structured Markdown extracted from the image.
+    """
+
+    DEFAULT_PROMPT: Final[str] = (
+        "ANALYZE THE TEXT IN THE PROVIDED IMAGE. SHORTLY DESCRIBE WHAT YOU SEE ON THE IMAGE. "
+        "EXTRACT ALL READABLE CONTENT AND PRESENT IT IN A STRUCTURED MARKDOWN FORMAT THAT IS CLEAR, "
+        "CONCISE, AND WELL‑ORGANIZED. DO NOT RETURN ANY TEXT NOT RELATED TO THE IMAGE SUCH AS HUMAN LIKE COMMENTS "
+        "BEFORE MEANINGFUL OUTPUT. TRY TO BE AS SHORT AS POSSIBLE, BUT DO NOT LEAVE OUT ANY MEANINGFUL INFORMATION."
+    )
+    use_prompt = prompt or DEFAULT_PROMPT
+
+    if isinstance(image, (bytes, bytearray)):  # ← new
+        img_bytes = image
+    else:
+        img_bytes = Path(image).expanduser().resolve().read_bytes()
+
+    response = ollama.chat(
+        model=model_name,
+        messages=[{
+            "role": "user",
+            "content": use_prompt,
+            "images": [img_bytes],
+        }],
+    )
+
+    # ollama‑py returns an object with .message for streaming, but dict for sync
+    if hasattr(response, "message"):
+        return response.message.content
+    if isinstance(response, dict) and "message" in response:
+        return response["message"]["content"]
+    raise RuntimeError("Unexpected response format from Ollama")
 
 
-async def ingestion_workflow(url: str) -> IngestResult:
+async def _summarize_document(media_path: Path, document_text: str):
+    summary_file_cache = f"{media_path.stem}_summary"
+    cache_f = _SUMMARY_CACHE_DIR / f"{summary_file_cache}.md"
+
+    if not cache_f.exists():
+        loguru.logger.info(f"{cache_f} summary cache file not exists, requesting summary from OpenAI...")
+        try:
+            summary = (await summarizer.ainvoke(
+                "Summarize the following Instagram content in one short paragraph, "
+                "preserving names, proper nouns and key facts:\n\n" + document_text
+            )).content
+            loguru.logger.info(f"Got summary from OpenAI {summary}...")
+            cache_f.write_text(summary, encoding="utf-8")
+            loguru.logger.info(f"Summary cached to {cache_f}...")
+            return summary
+        except Exception as e:
+            loguru.logger.info(f"Failed to summarize {media_path}...")
+            loguru.logger.exception(e)
+
+    else:
+        return cache_f.read_text(encoding="utf-8").strip()
+
+
+async def ingestion_workflow(url: str): # -> IngestResult:
     media_path, meta_data = _download_media(url, _DL_DIR)
     only_useful_metadata_for_llm = _extract_useful_metadata(meta_data)
     content_language = _determine_content_language(only_useful_metadata_for_llm['description'])
@@ -282,22 +387,33 @@ async def ingestion_workflow(url: str) -> IngestResult:
 
     if media_path.suffix == ".mp4":
         audio = _extract_audio(media_path)
+        loguru.logger.info(f"Audio extracted...")
         text, words = _whisper_transcribe(media_path, audio, content_language=content_language)
+        loguru.logger.info(f"Whisper transcribed text...")
         merged_parts.append(text)
         merged_parts.append(_ocr_video_frames(media_path, words=words, content_language=content_language))
+        loguru.logger.info(f"Gemma ocred frames...")
     else:
-        merged_parts.append(_ocr_image(media_path, content_language=content_language))
+        merged_parts.append(_gemma3_ocr(media_path))
 
     merged_text = "\n".join(p for p in merged_parts if p)
-    summary = await _summarize_document(merged_text)
 
-    doc_id = str(uuid.uuid4())
-    summary_doc = Document(page_content=summary,
-                           metadata={"doc_id": doc_id, "source_url": url})
-    vector_store.add_document(summary_doc)
+    loguru.logger.info(f"Got doc of {len(merged_text)} characters...")
 
-    await doc_store.put(doc_id, merged_text, url)
-
-    # chunks = _chunk_text(merged_text)
-    # doc_ids = _embed_and_store(chunks, url)
-    return IngestResult(url=url, doc_ids=[doc_id], merged_text=merged_text)
+    # summary = await _summarize_document(media_path, merged_text)
+    # loguru.logger.info(f"Got doc summary {summary}...")
+    #
+    # doc_id = str(uuid.uuid4())
+    # summary_doc = Document(page_content=summary,
+    #                        metadata={"doc_id": doc_id, "source_url": url})
+    # vector_store.add_document(summary_doc)
+    # loguru.logger.info(f"Added summary doc to vector store...")
+    #
+    # await doc_store.put(doc_id, merged_text, url)
+    # loguru.logger.info(f"Added full doc to doc store...")
+    #
+    # # chunks = _chunk_text(merged_text)
+    # # doc_ids = _embed_and_store(chunks, url)
+    # loguru.logger.info(f"Ingested {url} with doc_id: {doc_id}...")
+    # loguru.logger.info(f"Full merged text: {merged_text}")
+    # return IngestResult(url=url, doc_ids=[doc_id], merged_text=merged_text)

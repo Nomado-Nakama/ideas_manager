@@ -21,10 +21,10 @@ COPY --from=base /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       ffmpeg \
-      tesseract-ocr \
-      tesseract-ocr-eng \
-      tesseract-ocr-rus \
+      ollama
  && rm -rf /var/lib/apt/lists/*
+
+RUN ollama pull gemma3:12b
 
 # Copy your code
 COPY nn_ideas_manager ./nn_ideas_manager
