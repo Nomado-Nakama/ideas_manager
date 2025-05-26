@@ -23,12 +23,12 @@ from nn_ideas_manager.core.workers.process_undigested_urls.utils import ingestio
 async def _handle_url(link_id: str, url: str, telegram_id: int) -> None:
     try:
         result: IngestResult = await ingestion_workflow(url)
-        # logger.info(
-        #     "✅  Ingested {url} for user={u} → {n} chunks",
-        #     url=url,
-        #     u=telegram_id,
-        #     n=len(result.doc_ids),
-        # )
+        logger.info(
+            "✅  Ingested {url} for user={u} → {n} chunks",
+            url=url,
+            u=telegram_id,
+            n=len(result.doc_ids),
+        )
         status: Literal["ingested"] = "ingested"
     except Exception as exc:
         logger.exception("💥  Failed to ingest {url}: {e}", url=url, e=exc)

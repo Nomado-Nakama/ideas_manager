@@ -1,4 +1,5 @@
 import gc
+import json
 import os
 import uuid
 import time
@@ -30,7 +31,6 @@ from nn_ideas_manager.core.rag import vector_store, summarizer, doc_store
 load_dotenv(r'\Projects\python\nakama-ideas-manager\configs\.env')
 
 _IG_COOKIES_PATH = Path("cookies.txt").resolve()
-ig = Instagram()
 
 _META_SUFFIX_JSON = ".meta.json"
 
@@ -45,6 +45,8 @@ _SUMMARY_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 _DOC_CACHE_DIR = Path("/ingestion/doc_cache")
 _DOC_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+ig = Instagram()
 
 # ---------------------------------------------------------------------------
 #  Throttle every HTTP request made by yt-dlp to stay below IG/CDN rate-limits
@@ -123,8 +125,22 @@ def _extract_content_type_and_content_id_from_url(url: str) -> tuple[str, str]:
 def _load_cached_meta_data(content_id: str, out_dir: Path) -> dict | None:
     json_f = out_dir / f"{content_id}{_META_SUFFIX_JSON}"
     if json_f.exists():
-        return orjson.loads(json_f.read_bytes())
+        return json.loads(json_f.read_bytes())
     return None
+
+
+def _remove_content_from_cache(out_dir, content_id):
+    try:
+        os.remove(out_dir / f"{content_id}.mp4")
+        os.remove(out_dir / f"{content_id}{_META_SUFFIX_JSON}")
+        archive_file = out_dir / "downloaded.txt"
+        if archive_file.exists():
+            content_identifier = f"instagram {content_id}"
+            lines = archive_file.read_text(encoding="utf-8").splitlines()
+            filtered = [line for line in lines if content_identifier not in line]
+            archive_file.write_text("\n".join(filtered) + "\n", encoding="utf-8")
+    except Exception as e:
+        pass
 
 
 def _run(cmd: list[str]) -> None:
@@ -136,9 +152,12 @@ def _download_video_media(url: str, out_dir: Path = _DL_DIR) -> tuple[Path, dict
     _, content_id = _extract_content_type_and_content_id_from_url(url)
     cached = _load_cached_meta_data(content_id, out_dir)
     if cached:
-        final = out_dir / f"{cached['id']}.mp4"
-        if final.exists():
-            return final, cached
+        if isinstance(cached, dict):
+            final = out_dir / f"{cached['id']}.mp4"
+            if final.exists():
+                return final, cached
+        else:
+            _remove_content_from_cache(out_dir, content_id)
 
     ydl_opts = {
         "quiet": True,
@@ -152,11 +171,14 @@ def _download_video_media(url: str, out_dir: Path = _DL_DIR) -> tuple[Path, dict
         "max_sleep_requests": _YT_SLEEP_MAX,
         "sleep_interval": _YT_SLEEP_MIN,
         "max_sleep_interval": _YT_SLEEP_MAX,
-        "cookiefile": str(_IG_COOKIES_PATH)
+        # "cookiefile": str(_IG_COOKIES_PATH)
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
+        if info is None:
+            _remove_content_from_cache(out_dir, content_id)
+            info = ydl.extract_info(url, download=True)
         content_id = info["id"]
         _dump_content_meta_data(content_id, content_id, out_dir)
         final_path = Path(ydl.prepare_filename(info)).with_suffix(".mp4")
@@ -221,8 +243,7 @@ async def _ingest_instagram_reels(url: str):
     text, words = _whisper_transcribe(media_path, audio, content_language=content_language)
     loguru.logger.info(f"Whisper transcribed text...")
     merged_parts.append(text)
-    _unload_whisper()
-    loguru.logger.info(f"Whisper unloaded from VRAM...")
+
     merged_parts.append(_ocr_video_frames(media_path, words=words))
     loguru.logger.info(f"Gemma ocred frames...")
 
@@ -239,18 +260,18 @@ async def _ingest_instagram_reels(url: str):
     loguru.logger.info(f"Got doc summary {summary}...")
 
     doc_id = str(uuid.uuid4())
-    summary_doc = Document(page_content=summary,
-                           metadata={"doc_id": doc_id, "source_url": url})
-    vector_store.add_document(summary_doc)
-    loguru.logger.info(f"Added summary doc to vector store...")
+    # summary_doc = Document(page_content=summary,
+    #                        metadata={"doc_id": doc_id, "source_url": url})
+    # vector_store.add_documents([summary_doc])
+    # loguru.logger.info(f"Added summary doc to vector store...")
 
-    await doc_store.put(doc_id, merged_text, url)
-    loguru.logger.info(f"Added full doc to doc store...")
+    # await doc_store.put(doc_id, merged_text, url)
+    # loguru.logger.info(f"Added full doc to doc store...")
 
     # chunks = _chunk_text(merged_text)
     # doc_ids = _embed_and_store(chunks, url)
     loguru.logger.info(f"Ingested {url} with doc_id: {doc_id}...")
-    loguru.logger.info(f"Full merged text: {merged_text}")
+    # loguru.logger.info(f"Full merged text: {merged_text}")
     return IngestResult(url=url, doc_ids=[doc_id], merged_text=merged_text)
 
 
@@ -266,6 +287,8 @@ async def _ingest_instagram_post(url: str) -> IngestResult:
         loguru.logger.info(f"[CACHE‑HIT] Loaded cached doc for {content_id} "
                            f"({len(merged_text)} chars)…")
         return IngestResult(url, [], merged_text)
+
+    loguru.logger.info(f"No cached doc for: {url}")
 
     # 3️⃣  metadata block -----------------------------------------------------
     only_meta = _extract_ig_post_useful_metadata(meta_data)
@@ -285,12 +308,18 @@ async def _ingest_instagram_post(url: str) -> IngestResult:
 
         cache_f = _GEMMA_CACHE_DIR / f"{p.stem}.md"
         if cache_f.exists():                              # ⭐ already cached
+            loguru.logger.info(f"[CACHE-HIT] for: {p.stem}")
             txt = cache_f.read_text(encoding="utf-8").strip()
+
         else:                                             # ⭐ fresh OCR
             try:
+                loguru.logger.info(f"Running Gemma‑3 OCR model for: {p.stem}")
+                start_t = time.perf_counter()
                 txt = _gemma3_ocr(p,
                                   model_name="gemma3:12b",
-                                  use_gpu=True)           # returns str
+                                  use_gpu=True)
+                elapsed = time.perf_counter() - start_t
+                loguru.logger.info(f"Gemma‑3 OCR {p.stem} took {elapsed:.2f}s")
                 cache_f.write_text(txt, encoding="utf-8") # ↳ cache ASAP
             except Exception as exc:
                 loguru.logger.error(f"Gemma‑3 OCR failed for {p.name}: {exc}")
@@ -305,26 +334,30 @@ async def _ingest_instagram_post(url: str) -> IngestResult:
     loguru.logger.info(f"Document cached to {doc_cache_f}…")
 
     # 6️⃣  summary & vector‑store --------------------------------------------
-    summary = await _summarize_document(Path(content_id), merged_text)
+    # summary = await _summarize_document(Path(content_id), merged_text)
     doc_id = str(uuid.uuid4())
-    vector_store.add_document(Document(page_content=summary,
-                                       metadata={"doc_id": doc_id,
-                                                 "source_url": url}))
-    await doc_store.put(doc_id, merged_text, url)
-    loguru.logger.info(f"Ingested post {url} with doc_id {doc_id}")
+    # vector_store.add_documents([Document(page_content=summary,
+    #                                    metadata={"doc_id": doc_id,
+    #                                              "source_url": url})])
+    # await doc_store.put(doc_id, merged_text, url)
+    # loguru.logger.info(f"Ingested post {url} with doc_id {doc_id}")
 
     # 7️⃣  return -------------------------------------------------------------
     return IngestResult(url=url, doc_ids=[doc_id], merged_text=merged_text)
 
 
-async def ingestion_workflow(url: str):  # -> IngestResult:
+async def ingestion_workflow(url: str) -> IngestResult:
+    loguru.logger.info(f"Begin ingestion workflow for {url}")
     url_content_type, content_id = _extract_content_type_and_content_id_from_url(url)
 
-    if url_content_type == "ig_reels":
+    if url_content_type == "ig_reel":
         return await _ingest_instagram_reels(url)
 
     if url_content_type == "ig_post":
         return await _ingest_instagram_post(url)
+
+    else:
+        raise Exception("Unsupported content type")
 
 
 def _extract_audio(video_path: Path) -> Path:
@@ -381,6 +414,8 @@ def _whisper_transcribe(media_path: Path, wav: Path, chunk_sec: int | None = Non
     escaped = _get_escaped_word_timestamps(words)
     media_path.with_suffix(".words.json").write_bytes(orjson.dumps(escaped, option=orjson.OPT_INDENT_2))
 
+    _unload_whisper()
+    loguru.logger.info(f"Whisper unloaded from VRAM...")
     return text, escaped
 
 
@@ -437,9 +472,10 @@ def _ocr_video_frames(
             gemma_txt = ""
             frame_key = f"{video_path.stem}_{int(t_sec * 1000):08d}"  # e.g. vid123_0000800
             cache_f = _GEMMA_CACHE_DIR / f"{frame_key}.md"
-
+            loguru.logger.info(f"Gemma ocring {video_path} current cursor is on {t_sec}...")
             try:
                 if cache_f.exists():  # 1️⃣  read cache
+                    loguru.logger.info(f"Gemma hit cache on {video_path} with current cursor is on {t_sec}...")
                     gemma_txt = cache_f.read_text(encoding="utf-8").strip()
                 else:
                     # encode frame → PNG → bytes (no tmp files); measure runtime
@@ -524,6 +560,8 @@ def _extract_ig_post_useful_metadata(meta_data: dict):
 
 
 def _determine_content_language(content_description):
+    if not content_description:
+        return "en"
     if sum("а" <= ch.lower() <= "я" for ch in content_description) / max(len(content_description), 1) > 0.40:
         return "ru"
     else:
